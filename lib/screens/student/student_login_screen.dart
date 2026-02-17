@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../../utils/app_theme.dart';
 import 'student_home_screen.dart';
 
 class StudentLoginScreen extends StatefulWidget {
@@ -37,7 +38,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
     final result = await _authService.signIn(
       _emailController.text.trim(),
       _passwordController.text,
-      'student', // Role check
+      'student',
     );
 
     setState(() => _isLoading = false);
@@ -52,7 +53,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(result['message'] ?? 'Login failed'),
-          backgroundColor: Colors.red,
+          backgroundColor: AppTheme.error,
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -62,11 +63,11 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.primary,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppTheme.primary,
         elevation: 0,
-        iconTheme: IconThemeData(color: Colors.grey.shade800),
+        iconTheme: const IconThemeData(color: AppTheme.textPrimary),
       ),
       body: SafeArea(
         child: Center(
@@ -82,32 +83,33 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     height: 100,
                     width: 100,
                     decoration: BoxDecoration(
-                      color: Colors.green.shade50,
+                      color: AppTheme.secondary,
                       shape: BoxShape.circle,
+                      border: Border.all(color: AppTheme.success, width: 3),
                     ),
-                    child: Icon(
+                    child: const Icon(
                       Icons.school,
                       size: 50,
-                      color: Colors.green.shade700,
+                      color: AppTheme.success,
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  Text(
+                  const SizedBox(height: 32),
+                  const Text(
                     'Student Login',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
-                      color: Colors.grey.shade800,
+                      color: AppTheme.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
+                  const Text(
                     'Sign in with your student credentials',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 14,
-                      color: Colors.grey.shade600,
+                      color: AppTheme.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -115,21 +117,11 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     textInputAction: TextInputAction.next,
-                    decoration: InputDecoration(
+                    style: const TextStyle(color: AppTheme.textPrimary),
+                    decoration: const InputDecoration(
                       labelText: 'Email',
                       hintText: 'Enter your email',
-                      prefixIcon: const Icon(Icons.email_outlined),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.green, width: 2),
-                      ),
+                      prefixIcon: Icon(Icons.email_outlined),
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
@@ -146,6 +138,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.done,
+                    style: const TextStyle(color: AppTheme.textPrimary),
                     onFieldSubmitted: (_) => _handleLogin(),
                     decoration: InputDecoration(
                       labelText: 'Password',
@@ -156,23 +149,13 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                           _obscurePassword
                               ? Icons.visibility_off_outlined
                               : Icons.visibility_outlined,
+                          color: AppTheme.textSecondary,
                         ),
                         onPressed: () {
                           setState(() {
                             _obscurePassword = !_obscurePassword;
                           });
                         },
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.green, width: 2),
                       ),
                     ),
                     validator: (value) {
@@ -185,18 +168,14 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
                   SizedBox(
                     height: 56,
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _handleLogin,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green.shade700,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
+                        backgroundColor: AppTheme.accent,
+                        foregroundColor: AppTheme.primary,
                       ),
                       child: _isLoading
                           ? const SizedBox(
@@ -204,7 +183,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
                               width: 24,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                color: Colors.white,
+                                color: AppTheme.primary,
                               ),
                             )
                           : const Text(
