@@ -1,7 +1,6 @@
-
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
-import 'hod_home_screen.dart';
+import './hod_nav.dart';
 
 class HodLoginScreen extends StatefulWidget {
   const HodLoginScreen({Key? key}) : super(key: key);
@@ -15,7 +14,7 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  
+
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -29,9 +28,7 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
@@ -46,9 +43,15 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
     if (!mounted) return;
 
     if (result['success'] == true) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HodHomeScreen()),
-      );
+      final user = result['user'];
+      if (user != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HodNav(user: user),
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -106,10 +109,7 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
                   Text(
                     'Sign in with your HOD credentials',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 40),
                   TextFormField(
@@ -121,15 +121,15 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
                       hintText: 'Enter your email',
                       prefixIcon: const Icon(Icons.email_outlined),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          borderRadius: BorderRadius.circular(12)),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: Colors.grey.shade300),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.purple, width: 2),
+                        borderSide:
+                            const BorderSide(color: Colors.purple, width: 2),
                       ),
                     ),
                     validator: (value) {
@@ -153,27 +153,22 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
                       hintText: 'Enter your password',
                       prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
+                        icon: Icon(_obscurePassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined),
+                        onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
                       ),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          borderRadius: BorderRadius.circular(12)),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: Colors.grey.shade300),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Colors.purple, width: 2),
+                        borderSide:
+                            const BorderSide(color: Colors.purple, width: 2),
                       ),
                     ),
                     validator: (value) {
@@ -195,8 +190,7 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
                         backgroundColor: Colors.purple.shade700,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                            borderRadius: BorderRadius.circular(12)),
                         elevation: 2,
                       ),
                       child: _isLoading
@@ -204,17 +198,11 @@ class _HodLoginScreenState extends State<HodLoginScreen> {
                               height: 24,
                               width: 24,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: Colors.white,
-                              ),
+                                  strokeWidth: 2.5, color: Colors.white),
                             )
-                          : const Text(
-                              'Sign In',
+                          : const Text('Sign In',
                               style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                                  fontSize: 18, fontWeight: FontWeight.w600)),
                     ),
                   ),
                 ],

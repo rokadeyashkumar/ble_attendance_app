@@ -7,10 +7,12 @@ class HodAllocateSubjectScreen extends StatefulWidget {
   const HodAllocateSubjectScreen({Key? key}) : super(key: key);
 
   @override
-  State<HodAllocateSubjectScreen> createState() => _HodAllocateSubjectScreenState();
+  State<HodAllocateSubjectScreen> createState() =>
+      _HodAllocateSubjectScreenState();
 }
 
-class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
+class _HodAllocateSubjectScreenState
+    extends State<HodAllocateSubjectScreen> {
   final _formKey = GlobalKey<FormState>();
   final _codeController = TextEditingController();
   final _nameController = TextEditingController();
@@ -18,20 +20,41 @@ class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
 
   List<UserModel> _teachers = [];
   UserModel? _selectedTeacher;
-  String _selectedClass = 'FE';
-  String _selectedSection = 'A';
-  String _selectedDepartment = 'Computer';
   bool _isLoading = true;
   bool _isSaving = false;
 
-  final List<String> _classes = ['FE', 'SE', 'TE', 'BE'];
-  final List<String> _sections = ['A', 'B', 'C', 'D'];
-  final List<String> _departments = ['Computer', 'IT', 'Electronics', 'Mechanical', 'Civil'];
+  // Department abbreviation → full name (must match Firestore)
+  final Map<String, String> _departmentMap = {
+    'CSE': 'Computer Science And Engineering',
+    'IT':  'Information Technology',
+    'CIVIL': 'Civil Engineering',
+    'ELECTRICAL': 'Electrical Engineering',
+    'ME': 'Mechanical Engineering',
+  };
+
+  // Semester options (matches your 6th sem data, extend as needed)
+  final List<String> _semesters = ['1', '2', '3', '4', '5', '6', '7', '8'];
+  final List<String> _sections  = ['A', 'B', 'C', 'D'];
+
+  String _selectedDeptCode = 'CSE';
+  String _selectedSemester = '6';
+  String _selectedSection  = 'A';
+
+  // Computed class label e.g. "CSE-6A"
+  String get _classLabel =>
+      '$_selectedDeptCode-$_selectedSemester$_selectedSection';
 
   @override
   void initState() {
     super.initState();
     _loadTeachers();
+  }
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _nameController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTeachers() async {
@@ -45,7 +68,7 @@ class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
   Future<void> _allocateSubject() async {
     if (!_formKey.currentState!.validate() || _selectedTeacher == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
+        const SnackBar(content: Text('Please fill all fields and select a teacher')),
       );
       return;
     }
@@ -53,13 +76,13 @@ class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
     setState(() => _isSaving = true);
 
     final subject = SubjectModel(
-      code: _codeController.text.trim(),
+      code: _codeController.text.trim().toUpperCase(),
       name: _nameController.text.trim(),
       teacherId: _selectedTeacher!.uid,
       teacherName: _selectedTeacher!.name,
-      department: _selectedDepartment,
-      class_: _selectedClass,
-      section: _selectedSection,
+      department: _departmentMap[_selectedDeptCode]!,
+      class_: _classLabel,       // e.g. "CSE-6A"
+      section: _selectedSection, // e.g. "A"
     );
 
     bool success = await _databaseService.allocateSubject(subject);
@@ -69,30 +92,23 @@ class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? 'Subject allocated successfully!' : 'Failed to allocate'),
+          content: Text(success
+              ? 'Subject allocated to $_classLabel successfully!'
+              : 'Failed to allocate subject'),
           backgroundColor: success ? Colors.green : Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
-
-      if (success) {
-        Navigator.pop(context);
-      }
+      if (success) Navigator.pop(context);
     }
-  }
-
-  @override
-  void dispose() {
-    _codeController.dispose();
-    _nameController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -108,128 +124,117 @@ class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+
+              // Live preview of class label
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.purple.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.purple.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.label_outline, color: Colors.purple.shade700),
+                    const SizedBox(width: 12),
+                    Text(
+                      'Class Label: ',
+                      style: TextStyle(color: Colors.purple.shade700),
+                    ),
+                    Text(
+                      _classLabel,
+                      style: TextStyle(
+                        color: Colors.purple.shade700,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Subject Code
               TextFormField(
                 controller: _codeController,
                 textCapitalization: TextCapitalization.characters,
-                decoration: InputDecoration(
-                  labelText: 'Subject Code',
-                  hintText: 'e.g., CS101',
-                  prefixIcon: const Icon(Icons.code),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter subject code';
-                  }
-                  return null;
-                },
+                decoration: _inputDecoration('Subject Code', 'e.g. CSE601', Icons.code),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Enter subject code' : null,
               ),
               const SizedBox(height: 16),
+
+              // Subject Name
               TextFormField(
                 controller: _nameController,
-                decoration: InputDecoration(
-                  labelText: 'Subject Name',
-                  hintText: 'e.g., Data Structures',
-                  prefixIcon: const Icon(Icons.book),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter subject name';
-                  }
-                  return null;
-                },
+                decoration: _inputDecoration('Subject Name', 'e.g. Machine Learning', Icons.book),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Enter subject name' : null,
               ),
               const SizedBox(height: 16),
+
+              // Department
               DropdownButtonFormField<String>(
-                value: _selectedDepartment,
-                decoration: InputDecoration(
-                  labelText: 'Department',
-                  prefixIcon: const Icon(Icons.school),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                items: _departments.map((dept) {
-                  return DropdownMenuItem(value: dept, child: Text(dept));
+                value: _selectedDeptCode,
+                decoration: _inputDecoration('Department', '', Icons.school),
+                items: _departmentMap.keys.map((code) {
+                  return DropdownMenuItem(
+                    value: code,
+                    child: Text('$code — ${_departmentMap[code]}'),
+                  );
                 }).toList(),
-                onChanged: (value) {
-                  setState(() => _selectedDepartment = value!);
-                },
+                onChanged: (v) => setState(() => _selectedDeptCode = v!),
               ),
               const SizedBox(height: 16),
+
+              // Semester + Section (side by side)
               Row(
                 children: [
                   Expanded(
                     child: DropdownButtonFormField<String>(
-                      value: _selectedClass,
-                      decoration: InputDecoration(
-                        labelText: 'Class',
-                        prefixIcon: const Icon(Icons.class_),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      items: _classes.map((cls) {
-                        return DropdownMenuItem(value: cls, child: Text(cls));
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() => _selectedClass = value!);
-                      },
+                      value: _selectedSemester,
+                      decoration: _inputDecoration('Semester', '', Icons.format_list_numbered),
+                      items: _semesters
+                          .map((s) => DropdownMenuItem(value: s, child: Text('Sem $s')))
+                          .toList(),
+                      onChanged: (v) => setState(() => _selectedSemester = v!),
                     ),
                   ),
                   const SizedBox(width: 16),
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       value: _selectedSection,
-                      decoration: InputDecoration(
-                        labelText: 'Section',
-                        prefixIcon: const Icon(Icons.grid_view),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      items: _sections.map((sec) {
-                        return DropdownMenuItem(value: sec, child: Text(sec));
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() => _selectedSection = value!);
-                      },
+                      decoration: _inputDecoration('Section', '', Icons.grid_view),
+                      items: _sections
+                          .map((s) => DropdownMenuItem(value: s, child: Text('Section $s')))
+                          .toList(),
+                      onChanged: (v) => setState(() => _selectedSection = v!),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 16),
+
+              // Teacher
               DropdownButtonFormField<UserModel>(
                 value: _selectedTeacher,
-                decoration: InputDecoration(
-                  labelText: 'Assign Teacher',
-                  prefixIcon: const Icon(Icons.person),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
+                decoration: _inputDecoration('Assign Teacher', '', Icons.person),
+                isExpanded: true,
                 items: _teachers.map((teacher) {
                   return DropdownMenuItem(
                     value: teacher,
-                    child: Text(teacher.name),
+                    child: Text(
+                      '${teacher.name} (${teacher.employeeId ?? teacher.department ?? ''})',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  setState(() => _selectedTeacher = value);
-                },
-                validator: (value) {
-                  if (value == null) {
-                    return 'Please select a teacher';
-                  }
-                  return null;
-                },
+                onChanged: (v) => setState(() => _selectedTeacher = v),
+                validator: (v) => v == null ? 'Please select a teacher' : null,
               ),
               const SizedBox(height: 32),
+
+              // Allocate button
               SizedBox(
                 height: 56,
                 child: ElevatedButton(
@@ -238,30 +243,42 @@ class _HodAllocateSubjectScreenState extends State<HodAllocateSubjectScreen> {
                     backgroundColor: Colors.purple.shade700,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                   child: _isSaving
                       ? const SizedBox(
                           height: 24,
                           width: 24,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: Colors.white,
-                          ),
+                              strokeWidth: 2.5, color: Colors.white),
                         )
                       : const Text(
                           'Allocate Subject',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
+                              fontSize: 18, fontWeight: FontWeight.w600),
                         ),
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String label, String hint, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      prefixIcon: Icon(icon),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade300),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.purple.shade700, width: 2),
       ),
     );
   }

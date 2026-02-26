@@ -10,6 +10,7 @@ class HodReportsScreen extends StatelessWidget {
         title: const Text('Reports & Analytics'),
         backgroundColor: Colors.purple.shade700,
         foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
       ),
       body: Center(
         child: Padding(
@@ -17,11 +18,7 @@ class HodReportsScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.bar_chart,
-                size: 100,
-                color: Colors.grey.shade300,
-              ),
+              Icon(Icons.bar_chart, size: 100, color: Colors.grey.shade300),
               const SizedBox(height: 24),
               Text(
                 'Reports Coming Soon',
@@ -35,10 +32,7 @@ class HodReportsScreen extends StatelessWidget {
               Text(
                 'Attendance reports and analytics will be available here',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey.shade500,
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
               ),
             ],
           ),

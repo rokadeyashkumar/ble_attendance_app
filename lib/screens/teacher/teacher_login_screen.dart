@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
-import 'teacher_home_screen.dart';
+import './teacher_nav.dart';
 
 class TeacherLoginScreen extends StatefulWidget {
   const TeacherLoginScreen({Key? key}) : super(key: key);
@@ -14,7 +14,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  
+
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -28,9 +28,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
@@ -45,9 +43,15 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
     if (!mounted) return;
 
     if (result['success'] == true) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const TeacherHomeScreen()),
-      );
+      final user = result['user'];
+      if (user != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TeacherNav(user: user),
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -105,10 +109,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                   Text(
                     'Sign in with your teacher credentials',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 40),
                   TextFormField(
@@ -158,9 +159,7 @@ class _TeacherLoginScreenState extends State<TeacherLoginScreen> {
                               : Icons.visibility_outlined,
                         ),
                         onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
+                          setState(() => _obscurePassword = !_obscurePassword);
                         },
                       ),
                       border: OutlineInputBorder(

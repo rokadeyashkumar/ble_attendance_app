@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../utils/app_theme.dart';
-import 'student_home_screen.dart';
+import './student_nav.dart';
 
 class StudentLoginScreen extends StatefulWidget {
   const StudentLoginScreen({Key? key}) : super(key: key);
@@ -15,7 +15,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
-  
+
   bool _isLoading = false;
   bool _obscurePassword = true;
 
@@ -29,9 +29,7 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
 
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
@@ -46,9 +44,15 @@ class _StudentLoginScreenState extends State<StudentLoginScreen> {
     if (!mounted) return;
 
     if (result['success'] == true) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const StudentHomeScreen()),
-      );
+      final user = result['user'];
+      if (user != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => StudentNav(user: user),
+          ),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
