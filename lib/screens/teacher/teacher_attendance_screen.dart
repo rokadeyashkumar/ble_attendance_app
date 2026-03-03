@@ -25,14 +25,12 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   Set<String> _presentStudents = {};
   Map<String, bool> _manualAttendance = {};
 
-  bool _isScanning  = false;
-  bool _isLoading   = true;
-  bool _isSaving    = false;
+  bool _isScanning          = false;
+  bool _isLoading           = true;
+  bool _isSaving            = false;
   bool _isCheckingDuplicate = false;
 
   String? _currentTeacherId;
-
-  // ── Selected date (default = today) ───────────────────────────────
   DateTime _selectedDate = DateTime.now();
 
   @override
@@ -47,10 +45,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 
   String _formatDate(DateTime dt) {
-    const months = [
-      '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
+    const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const days = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return '${days[dt.weekday]}, ${dt.day} ${months[dt.month]} ${dt.year}';
   }
@@ -63,19 +59,18 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   // ── Load students ──────────────────────────────────────────────────
 
   Future<void> _loadStudents() async {
-    final user = await _authService.getCurrentUserData();
+    final user     = await _authService.getCurrentUserData();
     final students = await _databaseService.getStudentsByClass(
       widget.subject.class_,
       widget.subject.section,
     );
 
-    // Sort by roll number
     students.sort((a, b) => (a.rollNo ?? '').compareTo(b.rollNo ?? ''));
 
     setState(() {
       _currentTeacherId = user?.uid;
-      _students = students;
-      _isLoading = false;
+      _students         = students;
+      _isLoading        = false;
       for (var s in students) {
         _manualAttendance[s.rollNo!] = false;
       }
@@ -85,48 +80,42 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   // ── Date picker ────────────────────────────────────────────────────
 
   Future<void> _pickDate() async {
-    // Don't allow date change while scanning
     if (_isScanning) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Stop scanning before changing the date.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Stop scanning before changing the date.'),
+        behavior: SnackBarBehavior.floating,
+      ));
       return;
     }
 
     final picked = await showDatePicker(
       context: context,
       initialDate: _selectedDate,
-      firstDate: DateTime(2026, 2, 23), // Session start
-      lastDate: DateTime(2026, 5, 10),  // Session end
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Colors.orange.shade700,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-            ),
+      firstDate: DateTime(2026, 2, 23),
+      lastDate:   DateTime(2026, 5, 10),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: ColorScheme.light(
+            primary:   Colors.orange.shade700,
+            onPrimary: Colors.white,
+            surface:   Colors.white,
           ),
-          child: child!,
-        );
-      },
+        ),
+        child: child!,
+      ),
     );
 
     if (picked == null) return;
 
-    // If date changed and something was already marked — warn user
     final dateChanged = _dateKey(picked) != _dateKey(_selectedDate);
-    final hasMarked = _presentStudents.isNotEmpty ||
+    final hasMarked   = _presentStudents.isNotEmpty ||
         _manualAttendance.values.any((v) => v);
 
     if (dateChanged && hasMarked) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('Change Date?'),
+          title:   const Text('Change Date?'),
           content: const Text(
               'You have already marked some students. Changing the date will reset all marks. Continue?'),
           actions: [
@@ -145,8 +134,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         ),
       );
       if (confirm != true) return;
-
-      // Reset marks
       setState(() {
         _presentStudents.clear();
         _manualAttendance.updateAll((_, __) => false);
@@ -154,14 +141,9 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     }
 
     setState(() => _selectedDate = picked);
-
-    // Check if attendance already exists for this date
-    if (dateChanged) {
-      await _checkDuplicateAttendance();
-    }
+    if (dateChanged) await _checkDuplicateAttendance();
   }
 
-  // Check if attendance already exists for selected date — warn teacher
   Future<void> _checkDuplicateAttendance() async {
     setState(() => _isCheckingDuplicate = true);
 
@@ -170,13 +152,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       widget.subject.class_,
     );
 
-    final dk = _dateKey(_selectedDate);
+    final dk           = _dateKey(_selectedDate);
     bool alreadyExists = false;
-    for (final studentRecords in records.values) {
-      if (studentRecords.containsKey(dk)) {
-        alreadyExists = true;
-        break;
-      }
+    for (final sr in records.values) {
+      if (sr.containsKey(dk)) { alreadyExists = true; break; }
     }
 
     setState(() => _isCheckingDuplicate = false);
@@ -185,18 +164,15 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Icon(Icons.warning_amber_rounded,
-                  color: Colors.orange.shade700),
-              const SizedBox(width: 8),
-              const Text('Already Taken'),
-            ],
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange.shade700),
+            const SizedBox(width: 8),
+            const Text('Already Taken'),
+          ]),
           content: Text(
-            'Attendance for ${_formatDate(_selectedDate)} already exists.\n\nIf you save again, it will overwrite the existing records for this date.',
+            'Attendance for ${_formatDate(_selectedDate)} already exists.\n\n'
+            'If you save again, it will overwrite the existing records.',
           ),
           actions: [
             TextButton(
@@ -209,30 +185,22 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     }
   }
 
-  // ── BLE Scanning ───────────────────────────────────────────────────
+  // ── BLE ────────────────────────────────────────────────────────────
 
   Future<void> _startBLEScanning() async {
-    setState(() {
-      _isScanning = true;
-      _presentStudents.clear();
-    });
+    setState(() { _isScanning = true; _presentStudents.clear(); });
 
     bool started = await BleService.startScanning((rollNo) {
-      if (mounted) {
-        setState(() => _presentStudents.add(rollNo));
-      }
+      if (mounted) setState(() => _presentStudents.add(rollNo));
     });
 
     if (!started && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Failed to start scanning. Check permissions.')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to start scanning. Check permissions.')));
       setState(() => _isScanning = false);
       return;
     }
 
-    // Auto-stop after 60 seconds
     Future.delayed(const Duration(seconds: 60), () async {
       if (_isScanning) {
         await BleService.stopScanning();
@@ -246,12 +214,11 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     setState(() => _isScanning = false);
   }
 
-  // ── Save attendance ────────────────────────────────────────────────
+  // ── Save ───────────────────────────────────────────────────────────
 
   Future<void> _saveAttendance() async {
     if (_currentTeacherId == null) return;
 
-    // Confirm save
     final totalPresent = _presentStudents.length +
         _manualAttendance.values.where((v) => v).length;
     final totalAbsent = _students.length - totalPresent;
@@ -259,8 +226,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Confirm Save'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -269,28 +235,23 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
             Text('Date: ${_formatDate(_selectedDate)}',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(Icons.check_circle_rounded,
-                    color: Colors.green.shade600, size: 18),
-                const SizedBox(width: 8),
-                Text('Present: $totalPresent students'),
-              ],
-            ),
+            Row(children: [
+              Icon(Icons.check_circle_rounded,
+                  color: Colors.green.shade600, size: 18),
+              const SizedBox(width: 8),
+              Text('Present: $totalPresent students'),
+            ]),
             const SizedBox(height: 6),
-            Row(
-              children: [
-                Icon(Icons.cancel_rounded,
-                    color: Colors.red.shade600, size: 18),
-                const SizedBox(width: 8),
-                Text('Absent: $totalAbsent students'),
-              ],
-            ),
+            Row(children: [
+              Icon(Icons.cancel_rounded,
+                  color: Colors.red.shade600, size: 18),
+              const SizedBox(width: 8),
+              Text('Absent: $totalAbsent students'),
+            ]),
             const SizedBox(height: 12),
             Text(
               'All $totalAbsent unmarked students will be saved as absent.',
-              style: TextStyle(
-                  fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ],
         ),
@@ -311,36 +272,19 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     );
 
     if (confirm != true) return;
-
     setState(() => _isSaving = true);
 
-    // Determine final status for each student
-    // Present = BLE detected OR manually checked
-    // Absent  = everyone else
-    final List<AttendanceModel> toSave = [];
     final selectedDateNoon = DateTime(
-      _selectedDate.year,
-      _selectedDate.month,
-      _selectedDate.day,
-      9, 0,
-    );
+        _selectedDate.year, _selectedDate.month, _selectedDate.day, 9, 0);
 
-    for (final student in _students) {
-      final rollNo     = student.rollNo!;
-      final isBLE      = _presentStudents.contains(rollNo);
-      final isManual   = _manualAttendance[rollNo] ?? false;
-      final isPresent  = isBLE || isManual;
+    final List<AttendanceModel> toSave = _students.map((student) {
+      final rollNo   = student.rollNo!;
+      final isBLE    = _presentStudents.contains(rollNo);
+      final isManual = _manualAttendance[rollNo] ?? false;
+      final isPresent = isBLE || isManual;
+      final markedBy  = isBLE ? 'bluetooth' : isManual ? 'manual' : 'auto_absent';
 
-      String markedBy;
-      if (isBLE) {
-        markedBy = 'bluetooth';
-      } else if (isManual) {
-        markedBy = 'manual';
-      } else {
-        markedBy = 'auto_absent';
-      }
-
-      toSave.add(AttendanceModel(
+      return AttendanceModel(
         id:            '',
         studentRollNo: rollNo,
         studentName:   student.name,
@@ -348,44 +292,37 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
         subjectName:   widget.subject.name,
         teacherId:     _currentTeacherId!,
         class_:        widget.subject.class_,
-        dateTime:      selectedDateNoon, // ✅ uses selected date, not DateTime.now()
+        dateTime:      selectedDateNoon,
         status:        isPresent ? 'present' : 'absent',
         markedBy:      markedBy,
-      ));
-    }
+      );
+    }).toList();
 
-    // Delete existing records for this date (overwrite)
+    // Delete existing records for this date first (overwrite)
     final existingRecords = await _databaseService.getAttendanceForSubjectClass(
       widget.subject.code,
       widget.subject.class_,
     );
     final dk = _dateKey(_selectedDate);
-    for (final studentRecords in existingRecords.values) {
-      final existing = studentRecords[dk];
-      if (existing != null && existing.id.isNotEmpty) {
-        await _databaseService.deleteAttendance(existing.id);
+    for (final sr in existingRecords.values) {
+      final ex = sr[dk];
+      if (ex != null && ex.id.isNotEmpty) {
+        await _databaseService.deleteAttendance(ex.id);
       }
     }
 
-    // Save all fresh records in one batch
     final success = await _databaseService.saveAttendanceBatch(toSave);
-
     setState(() => _isSaving = false);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(success
-              ? '✅ Attendance saved for ${_formatDate(_selectedDate)} — $totalPresent present, $totalAbsent absent'
-              : '❌ Failed to save. Try again.'),
-          backgroundColor:
-              success ? Colors.green.shade700 : Colors.red.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(success
+            ? '✅ Saved for ${_formatDate(_selectedDate)} — $totalPresent present, $totalAbsent absent'
+            : '❌ Failed to save. Try again.'),
+        backgroundColor: success ? Colors.green.shade700 : Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ));
       if (success) {
         setState(() {
           _presentStudents.clear();
@@ -400,8 +337,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-          body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final totalPresent = _presentStudents.length +
@@ -417,7 +353,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       body: Column(
         children: [
 
-          // ── Subject + Date Info Card ─────────────────────────────
+          // ── Subject + Date Card ──────────────────────────────────
           Container(
             margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             decoration: BoxDecoration(
@@ -427,7 +363,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
             ),
             child: Column(
               children: [
-                // Top row: class info + present count
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
                   child: Row(
@@ -438,45 +373,37 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           children: [
                             Text(
                               '${widget.subject.class_}  •  Section ${widget.subject.section}',
-                              style: const TextStyle(
+                              style: TextStyle(
+                                  color: Colors.orange.shade800,
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              'Total Students: ${_students.length}',
-                              style: TextStyle(
-                                  color: Colors.grey.shade600,
-                                  fontSize: 13),
-                            ),
+                            Text('Total Students: ${_students.length}',
+                                style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 13)),
                           ],
                         ),
                       ),
-                      // Present / Absent counters
-                      Column(
-                        children: [
-                          Row(
-                            children: [
-                              _statBadge('$totalPresent', 'Present',
-                                  Colors.green.shade700),
-                              const SizedBox(width: 12),
-                              _statBadge(
-                                  '$totalAbsent', 'Absent', Colors.red.shade600),
-                            ],
-                          ),
-                        ],
-                      ),
+                      Row(children: [
+                        _statBadge('$totalPresent', 'Present',
+                            Colors.green.shade700),
+                        const SizedBox(width: 12),
+                        _statBadge('$totalAbsent', 'Absent',
+                            Colors.red.shade600),
+                      ]),
                     ],
                   ),
                 ),
 
                 const Divider(height: 1),
 
-                // Date picker row
+                // Date row
                 InkWell(
                   onTap: _pickDate,
                   borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(16),
+                    bottomLeft:  Radius.circular(16),
                     bottomRight: Radius.circular(16),
                   ),
                   child: Padding(
@@ -490,39 +417,34 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                'Attendance Date',
-                                style: TextStyle(
-                                    fontSize: 11,
-                                    color: Colors.grey.shade500),
-                              ),
+                              Text('Attendance Date',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey.shade500)),
                               const SizedBox(height: 2),
                               Text(
                                 _formatDate(_selectedDate),
                                 style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.orange.shade900,
-                                ),
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.orange.shade900),
                               ),
                             ],
                           ),
                         ),
                         if (_isCheckingDuplicate)
                           const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2))
                         else ...[
                           if (_isToday(_selectedDate))
                             Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
-                                color: Colors.green.shade100,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(6)),
                               child: Text('Today',
                                   style: TextStyle(
                                       fontSize: 11,
@@ -543,7 +465,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
 
           const SizedBox(height: 12),
 
-          // ── BLE Scan / Save Buttons ──────────────────────────────
+          // ── Buttons ──────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -555,22 +477,21 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     icon: Icon(_isScanning
                         ? Icons.stop_rounded
                         : Icons.bluetooth_searching_rounded),
-                    label: Text(_isScanning
-                        ? 'Stop Scanning'
-                        : 'Start BLE Scan'),
+                    label: Text(
+                        _isScanning ? 'Stop Scanning' : 'Start BLE Scan'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isScanning
                           ? Colors.red.shade600
                           : Colors.orange.shade700,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Save button — always visible once students loaded
                 ElevatedButton.icon(
                   onPressed: _isSaving ? null : _saveAttendance,
                   icon: _isSaving
@@ -580,8 +501,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.save_rounded),
-                  label:
-                      Text(_isSaving ? 'Saving...' : 'Save'),
+                  label: Text(_isSaving ? 'Saving...' : 'Save'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade700,
                     foregroundColor: Colors.white,
@@ -595,7 +515,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
             ),
           ),
 
-          // ── Scanning indicator ───────────────────────────────────
           if (_isScanning)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 10),
@@ -603,31 +522,29 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
                   const SizedBox(width: 10),
                   Text('Scanning for student devices...',
-                      style:
-                          TextStyle(color: Colors.grey.shade600)),
+                      style: TextStyle(color: Colors.grey.shade600)),
                 ],
               ),
             )
           else
             const SizedBox(height: 8),
 
-          // ── Students list ────────────────────────────────────────
+          // ── Student List ─────────────────────────────────────────
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               itemCount: _students.length,
               itemBuilder: (context, index) {
-                final student    = _students[index];
-                final rollNo     = student.rollNo!;
-                final isBLE      = _presentStudents.contains(rollNo);
-                final isManual   = _manualAttendance[rollNo] ?? false;
-                final isPresent  = isBLE || isManual;
+                final student   = _students[index];
+                final rollNo    = student.rollNo!;
+                final isBLE     = _presentStudents.contains(rollNo);
+                final isManual  = _manualAttendance[rollNo] ?? false;
+                final isPresent = isBLE || isManual;
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
@@ -642,25 +559,28 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2)),
                     ],
                   ),
                   child: ListTile(
                     contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 4),
+                        horizontal: 14, vertical: 6),
                     leading: CircleAvatar(
                       backgroundColor: isPresent
                           ? Colors.green.shade100
                           : Colors.grey.shade100,
                       child: Text(
-                        rollNo.replaceAll(RegExp(r'[^0-9]'), '').isEmpty
-                            ? student.name[0]
+                        rollNo
+                            .replaceAll(RegExp(r'[^0-9]'), '')
+                            .isEmpty
+                            ? (student.name.isNotEmpty
+                                ? student.name[0]
+                                : '?')
                             : rollNo.replaceAll(RegExp(r'[^0-9]'), ''),
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: isPresent
                               ? Colors.green.shade700
@@ -668,54 +588,60 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                         ),
                       ),
                     ),
+
+                    // ✅ Student name — bold, black
                     title: Text(
-                      student.name,
+                      student.name.isNotEmpty
+                          ? student.name
+                          : '(no name)',
                       style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 14),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Colors.black87,
+                      ),
                     ),
+
+                    // ✅ Roll number below name — grey
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Roll No: $rollNo',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500)),
-                        if (isBLE)
-                          Row(
-                            children: [
-                              Icon(Icons.bluetooth_rounded,
-                                  size: 12,
-                                  color: Colors.blue.shade600),
-                              const SizedBox(width: 4),
-                              Text('Detected via Bluetooth',
-                                  style: TextStyle(
-                                      color: Colors.blue.shade600,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500)),
-                            ],
-                          ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Roll No: $rollNo',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade500),
+                        ),
+                        if (isBLE) ...[
+                          const SizedBox(height: 2),
+                          Row(children: [
+                            Icon(Icons.bluetooth_rounded,
+                                size: 12, color: Colors.blue.shade600),
+                            const SizedBox(width: 4),
+                            Text('Detected via Bluetooth',
+                                style: TextStyle(
+                                    color: Colors.blue.shade600,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500)),
+                          ]),
+                        ],
                       ],
                     ),
+
                     trailing: isBLE
-                        // BLE detected — show locked green tick
                         ? Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade100,
-                              shape: BoxShape.circle,
-                            ),
+                                color: Colors.green.shade100,
+                                shape: BoxShape.circle),
                             child: Icon(Icons.check_rounded,
                                 color: Colors.green.shade700, size: 20),
                           )
-                        // Manual checkbox
                         : Checkbox(
                             value: isManual,
-                            onChanged: (value) {
-                              setState(() {
-                                _manualAttendance[rollNo] =
-                                    value ?? false;
-                              });
-                            },
+                            onChanged: (value) => setState(() {
+                              _manualAttendance[rollNo] = value ?? false;
+                            }),
                             activeColor: Colors.green.shade700,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(4)),
@@ -739,7 +665,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 fontWeight: FontWeight.bold,
                 color: color)),
         Text(label,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+            style:
+                TextStyle(fontSize: 11, color: Colors.grey.shade600)),
       ],
     );
   }

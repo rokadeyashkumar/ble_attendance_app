@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:excel/excel.dart' hide Border;
+import 'package:excel/excel.dart' hide Border; // ✅ prevents Border conflict
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import '../../models/attendance_model.dart';
@@ -31,7 +31,7 @@ class _TeacherAttendanceTableScreenState
 
   late final List<DateTime> _dates;
   List<UserModel> _students = [];
-  Map<String, Map<String, String?>>       _cellState    = {};
+  Map<String, Map<String, String?>>         _cellState    = {};
   Map<String, Map<String, AttendanceModel>> _savedRecords = {};
 
   String? _teacherId;
@@ -40,16 +40,32 @@ class _TeacherAttendanceTableScreenState
   bool _isExporting       = false;
   bool _hasUnsavedChanges = false;
 
-  // ── Month / day label helpers ──────────────────────────────────────
+  // ✅ ScrollController for horizontal auto-scroll to today
+  final ScrollController _dateScrollController = ScrollController();
+
   final _monthNames = ['','Jan','Feb','Mar','Apr','May','Jun',
                        'Jul','Aug','Sep','Oct','Nov','Dec'];
   final _dayNames   = ['','Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+  // Column widths — needed for scroll offset calculation
+  static const double _dateColW    = 46.0;
+  static const double _summaryColW = 42.0;
+  static const double _rollColW    = 50.0;
+  static const double _nameColW    = 130.0;
+  static const double _rowH        = 52.0;
+  static const double _headerH     = 66.0;
 
   @override
   void initState() {
     super.initState();
     _dates = _buildDateRange();
     _loadAll();
+  }
+
+  @override
+  void dispose() {
+    _dateScrollController.dispose();
+    super.dispose();
   }
 
   // ── Date helpers ───────────────────────────────────────────────────
@@ -76,6 +92,43 @@ class _TeacherAttendanceTableScreenState
   bool _isWeekend(DateTime d) =>
       d.weekday == DateTime.saturday || d.weekday == DateTime.sunday;
 
+  // ✅ Find index of today (or nearest past date) in _dates
+  int _todayIndex() {
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    // Find exact match first
+    for (int i = 0; i < _dates.length; i++) {
+      final d = _dates[i];
+      if (d.year == todayOnly.year &&
+          d.month == todayOnly.month &&
+          d.day == todayOnly.day) return i;
+    }
+    // If today is after session end, scroll to last date
+    if (todayOnly.isAfter(_dates.last)) return _dates.length - 1;
+    // If today is before session start, stay at 0
+    return 0;
+  }
+
+  // ✅ Auto scroll to today after table loads
+  void _scrollToToday() {
+    final idx = _todayIndex();
+    if (idx <= 0) return; // already at start, no need
+
+    // Offset = index × column width, minus some padding so today is visible
+    // We offset by a few columns back so context is visible
+    final offset = (idx - 2).clamp(0, _dates.length - 1) * _dateColW;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_dateScrollController.hasClients) {
+        _dateScrollController.animateTo(
+          offset,
+          duration: const Duration(milliseconds: 600),
+          curve: Curves.easeInOut,
+        );
+      }
+    });
+  }
+
   // ── Load ───────────────────────────────────────────────────────────
 
   Future<void> _loadAll() async {
@@ -84,23 +137,18 @@ class _TeacherAttendanceTableScreenState
     final user = await _auth.getCurrentUserData();
     _teacherId = user?.uid;
 
-    // Fetch students
     final raw = await _db.getStudentsByClass(
       widget.subject.class_,
       widget.subject.section,
     );
-
-    // Sort by roll number
     raw.sort((a, b) => (a.rollNo ?? '').compareTo(b.rollNo ?? ''));
     _students = raw;
 
-    // Fetch attendance records
     _savedRecords = await _db.getAttendanceForSubjectClass(
       widget.subject.code,
       widget.subject.class_,
     );
 
-    // Build cell state — null means no Firebase record (blank)
     _cellState = {};
     for (final s in _students) {
       final rn = s.rollNo!;
@@ -112,9 +160,12 @@ class _TeacherAttendanceTableScreenState
     }
 
     setState(() {
-      _isLoading = false;
+      _isLoading         = false;
       _hasUnsavedChanges = false;
     });
+
+    // ✅ Scroll to today after build
+    _scrollToToday();
   }
 
   // ── Toggle ─────────────────────────────────────────────────────────
@@ -151,7 +202,6 @@ class _TeacherAttendanceTableScreenState
 
         if (state == null) {
           if (_isPastOrToday(date) && _anyRecordOnDate(key)) {
-            // Auto-absent only if class happened that day
             if (existing != null) {
               if (existing.status != 'absent')
                 toSave.add(existing.copyWith(status: 'absent', markedBy: 'auto_absent'));
@@ -172,15 +222,13 @@ class _TeacherAttendanceTableScreenState
       }
     }
 
-    for (final id in toDelete) {
-      await _db.deleteAttendance(id);
-    }
+    for (final id in toDelete) await _db.deleteAttendance(id);
 
     bool ok = true;
     if (toSave.isNotEmpty) ok = await _db.saveAttendanceBatch(toSave);
 
     setState(() {
-      _isSaving = false;
+      _isSaving          = false;
       _hasUnsavedChanges = !ok;
     });
 
@@ -203,10 +251,9 @@ class _TeacherAttendanceTableScreenState
     return false;
   }
 
-  AttendanceModel _newRecord(
-      UserModel s, DateTime date, String status, String by) {
+  AttendanceModel _newRecord(UserModel s, DateTime date, String status, String by) {
     return AttendanceModel(
-      id: '',
+      id:            '',
       studentRollNo: s.rollNo!,
       studentName:   s.name,
       subjectCode:   widget.subject.code,
@@ -219,7 +266,7 @@ class _TeacherAttendanceTableScreenState
     );
   }
 
-  // ── Summary ────────────────────────────────────────────────────────
+  // ── Summary helpers ────────────────────────────────────────────────
 
   int _studentPresent(String rn) =>
       _cellState[rn]?.values.where((v) => v == 'present').length ?? 0;
@@ -239,7 +286,6 @@ class _TeacherAttendanceTableScreenState
       final sheet = excel['Attendance'];
       excel.delete('Sheet1');
 
-      // Header style
       final headerStyle = CellStyle(
         bold: true,
         horizontalAlign: HorizontalAlign.Center,
@@ -276,44 +322,34 @@ class _TeacherAttendanceTableScreenState
       );
 
       // Title rows
-      sheet.merge(
-          CellIndex.indexByString('A1'),
-          CellIndex.indexByColumnRow(
-              columnIndex: 3 + _dates.length, rowIndex: 0));
+      sheet.merge(CellIndex.indexByString('A1'),
+          CellIndex.indexByColumnRow(columnIndex: 3 + _dates.length, rowIndex: 0));
       final titleCell = sheet.cell(CellIndex.indexByString('A1'));
       titleCell.value = TextCellValue(
           'Attendance Register — ${widget.subject.name} (${widget.subject.code})');
       titleCell.cellStyle = CellStyle(
           bold: true, fontSize: 14, horizontalAlign: HorizontalAlign.Center);
 
-      sheet.merge(
-          CellIndex.indexByString('A2'),
-          CellIndex.indexByColumnRow(
-              columnIndex: 3 + _dates.length, rowIndex: 1));
+      sheet.merge(CellIndex.indexByString('A2'),
+          CellIndex.indexByColumnRow(columnIndex: 3 + _dates.length, rowIndex: 1));
       final subCell = sheet.cell(CellIndex.indexByString('A2'));
       subCell.value = TextCellValue(
           'Class: ${widget.subject.class_}  |  Section: ${widget.subject.section}  |  Session: 23 Feb 2026 – 10 May 2026');
-      subCell.cellStyle =
-          CellStyle(horizontalAlign: HorizontalAlign.Center, italic: true);
+      subCell.cellStyle = CellStyle(horizontalAlign: HorizontalAlign.Center, italic: true);
 
-      // Column headers — row 3 (index 2)
+      // Headers row 3
       final headers = ['#', 'Roll No', 'Student Name'];
       for (int i = 0; i < headers.length; i++) {
-        final cell =
-            sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 2));
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 2));
         cell.value = TextCellValue(headers[i]);
         cell.cellStyle = headerStyle;
       }
-      // Date headers
       for (int i = 0; i < _dates.length; i++) {
         final d    = _dates[i];
-        final cell = sheet.cell(
-            CellIndex.indexByColumnRow(columnIndex: 3 + i, rowIndex: 2));
-        cell.value = TextCellValue(
-            '${_dayNames[d.weekday]}\n${d.day} ${_monthNames[d.month]}');
+        final cell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3 + i, rowIndex: 2));
+        cell.value = TextCellValue('${_dayNames[d.weekday]}\n${d.day} ${_monthNames[d.month]}');
         cell.cellStyle = _isWeekend(d) ? weekendStyle : headerStyle;
       }
-      // P / A headers
       final pHdr = sheet.cell(CellIndex.indexByColumnRow(
           columnIndex: 3 + _dates.length, rowIndex: 2));
       pHdr.value = TextCellValue('Total P');
@@ -332,34 +368,26 @@ class _TeacherAttendanceTableScreenState
           fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
           horizontalAlign: HorizontalAlign.Center);
 
-      // Student rows — starting row index 3
+      // Student rows
       for (int si = 0; si < _students.length; si++) {
-        final s  = _students[si];
-        final rn = s.rollNo!;
+        final s   = _students[si];
+        final rn  = s.rollNo!;
         final row = 3 + si;
 
-        // Sr. No
-        sheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: row))
             .value = IntCellValue(si + 1);
-
-        // Roll No
-        sheet
-            .cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
+        sheet.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: row))
             .value = TextCellValue(rn);
 
-        // Name — ✅ FIX: use s.name directly, wrap if long
-        final nameCell =
-            sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row));
+        // ✅ name fix
+        final nameCell = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: row));
         nameCell.value = TextCellValue(s.name);
         nameCell.cellStyle = CellStyle(textWrapping: TextWrapping.WrapText);
 
-        // Attendance cells
         for (int di = 0; di < _dates.length; di++) {
           final dk    = _dateKey(_dates[di]);
           final state = _cellState[rn]?[dk];
-          final cell  = sheet.cell(
-              CellIndex.indexByColumnRow(columnIndex: 3 + di, rowIndex: row));
+          final cell  = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3 + di, rowIndex: row));
           if (state == 'present') {
             cell.value = TextCellValue('P');
             cell.cellStyle = presentStyle;
@@ -371,7 +399,6 @@ class _TeacherAttendanceTableScreenState
           }
         }
 
-        // Totals
         final pCell = sheet.cell(CellIndex.indexByColumnRow(
             columnIndex: 3 + _dates.length, rowIndex: row));
         pCell.value = IntCellValue(_studentPresent(rn));
@@ -383,20 +410,17 @@ class _TeacherAttendanceTableScreenState
         aCell.cellStyle = summaryStyle;
       }
 
-      // Summary rows at bottom
-      final presRow = 3 + _students.length;
-      final absRow  = 4 + _students.length;
-
-      final presLabel = sheet.cell(
-          CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: presRow));
+      // Summary rows
+      final presRow  = 3 + _students.length;
+      final absRow   = 4 + _students.length;
+      final presLabel = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: presRow));
       presLabel.value = TextCellValue('Total Present');
       presLabel.cellStyle = CellStyle(
           bold: true,
           backgroundColorHex: ExcelColor.fromHexString('#E8F5E9'),
           fontColorHex: ExcelColor.fromHexString('#2E7D32'));
 
-      final absLabel = sheet
-          .cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: absRow));
+      final absLabel = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 2, rowIndex: absRow));
       absLabel.value = TextCellValue('Total Absent');
       absLabel.cellStyle = CellStyle(
           bold: true,
@@ -405,10 +429,8 @@ class _TeacherAttendanceTableScreenState
 
       for (int di = 0; di < _dates.length; di++) {
         final dk = _dateKey(_dates[di]);
-        final pc = sheet.cell(CellIndex.indexByColumnRow(
-            columnIndex: 3 + di, rowIndex: presRow));
-        final ac = sheet.cell(CellIndex.indexByColumnRow(
-            columnIndex: 3 + di, rowIndex: absRow));
+        final pc = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3 + di, rowIndex: presRow));
+        final ac = sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3 + di, rowIndex: absRow));
         final p = _datePresent(dk);
         final a = _dateAbsent(dk);
         pc.value = p == 0 ? TextCellValue('') : IntCellValue(p);
@@ -425,28 +447,19 @@ class _TeacherAttendanceTableScreenState
             bold: true);
       }
 
-      // Column widths
       sheet.setColumnWidth(0, 6);
       sheet.setColumnWidth(1, 12);
       sheet.setColumnWidth(2, 22);
-      for (int i = 0; i < _dates.length; i++) {
-        sheet.setColumnWidth(3 + i, 7);
-      }
+      for (int i = 0; i < _dates.length; i++) sheet.setColumnWidth(3 + i, 7);
       sheet.setColumnWidth(3 + _dates.length, 10);
       sheet.setColumnWidth(4 + _dates.length, 10);
 
-      // Save & share
       final bytes = excel.encode()!;
       final dir   = await getTemporaryDirectory();
-      final file  = File(
-          '${dir.path}/Attendance_${widget.subject.code}_${widget.subject.class_}.xlsx');
+      final file  = File('${dir.path}/Attendance_${widget.subject.code}_${widget.subject.class_}.xlsx');
       await file.writeAsBytes(bytes);
-
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject:
-            'Attendance — ${widget.subject.name} (${widget.subject.class_})',
-      );
+      await Share.shareXFiles([XFile(file.path)],
+          subject: 'Attendance — ${widget.subject.name} (${widget.subject.class_})');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -464,8 +477,6 @@ class _TeacherAttendanceTableScreenState
     setState(() => _isExporting = true);
     try {
       final pdf = pw.Document();
-
-      // Split dates into chunks of 20 per page (landscape fits ~20 dates)
       const int chunkSize = 20;
       final List<List<DateTime>> chunks = [];
       for (int i = 0; i < _dates.length; i += chunkSize) {
@@ -475,169 +486,127 @@ class _TeacherAttendanceTableScreenState
 
       for (int ci = 0; ci < chunks.length; ci++) {
         final chunk = chunks[ci];
-        pdf.addPage(
-          pw.Page(
-            pageFormat: PdfPageFormat.a4.landscape,
-            margin: const pw.EdgeInsets.all(16),
-            build: (ctx) {
-              return pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
+        pdf.addPage(pw.Page(
+          pageFormat: PdfPageFormat.a4.landscape,
+          margin: const pw.EdgeInsets.all(16),
+          build: (ctx) => pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Attendance Register — ${widget.subject.name} (${widget.subject.code})',
+                style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold),
+              ),
+              pw.SizedBox(height: 4),
+              pw.Text(
+                'Class: ${widget.subject.class_}  |  Section: ${widget.subject.section}  |  Session: 23 Feb 2026 – 10 May 2026  |  Page ${ci + 1}/${chunks.length}',
+                style: const pw.TextStyle(fontSize: 9),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Table(
+                border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
+                columnWidths: {
+                  0: const pw.FixedColumnWidth(22),
+                  1: const pw.FixedColumnWidth(48),
+                  2: const pw.FixedColumnWidth(90),
+                  for (int i = 0; i < chunk.length; i++)
+                    3 + i: const pw.FixedColumnWidth(22),
+                  3 + chunk.length: const pw.FixedColumnWidth(24),
+                  4 + chunk.length: const pw.FixedColumnWidth(24),
+                },
                 children: [
-                  // Title
-                  pw.Text(
-                    'Attendance Register — ${widget.subject.name} (${widget.subject.code})',
-                    style: pw.TextStyle(
-                        fontSize: 13, fontWeight: pw.FontWeight.bold),
-                  ),
-                  pw.SizedBox(height: 4),
-                  pw.Text(
-                    'Class: ${widget.subject.class_}  |  Section: ${widget.subject.section}  |  Session: 23 Feb 2026 – 10 May 2026  |  Page ${ci + 1}/${chunks.length}',
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                  pw.SizedBox(height: 8),
-
-                  // Table
-                  pw.Table(
-                    border: pw.TableBorder.all(
-                        color: PdfColors.grey400, width: 0.5),
-                    columnWidths: {
-                      0: const pw.FixedColumnWidth(22),  // #
-                      1: const pw.FixedColumnWidth(48),  // Roll
-                      2: const pw.FixedColumnWidth(90),  // Name
-                      for (int i = 0; i < chunk.length; i++)
-                        3 + i: const pw.FixedColumnWidth(22), // dates
-                      3 + chunk.length:
-                          const pw.FixedColumnWidth(24), // P total
-                      4 + chunk.length:
-                          const pw.FixedColumnWidth(24), // A total
-                    },
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.deepOrange700),
                     children: [
-                      // Header row
-                      pw.TableRow(
-                        decoration:
-                            const pw.BoxDecoration(color: PdfColors.deepOrange700),
-                        children: [
-                          _pdfHeaderCell('#'),
-                          _pdfHeaderCell('Roll No'),
-                          _pdfHeaderCell('Student Name'),
-                          ...chunk.map((d) => _pdfHeaderCell(
-                              '${_dayNames[d.weekday]}\n${d.day} ${_monthNames[d.month]}',
-                              isWeekend: _isWeekend(d))),
-                          _pdfHeaderCell('P', color: PdfColors.green800),
-                          _pdfHeaderCell('A', color: PdfColors.red800),
-                        ],
-                      ),
-                      // Student rows
-                      ..._students.asMap().entries.map((entry) {
-                        final idx = entry.key;
-                        final s   = entry.value;
-                        final rn  = s.rollNo!;
-                        return pw.TableRow(
-                          decoration: pw.BoxDecoration(
-                            color: idx.isOdd
-                                ? PdfColors.grey100
-                                : PdfColors.white,
-                          ),
-                          children: [
-                            _pdfCell('${idx + 1}', center: true),
-                            _pdfCell(rn, center: true),
-                            _pdfCell(s.name), // ✅ student name
-                            ...chunk.map((d) {
-                              final state = _cellState[rn]?[_dateKey(d)];
-                              return _pdfAttendanceCell(state);
-                            }),
-                            _pdfCell('${_studentPresent(rn)}',
-                                center: true,
-                                color: PdfColors.green800,
-                                bold: true),
-                            _pdfCell('${_studentAbsent(rn)}',
-                                center: true,
-                                color: PdfColors.red800,
-                                bold: true),
-                          ],
-                        );
-                      }),
-                      // Summary rows
-                      pw.TableRow(
-                        decoration: const pw.BoxDecoration(
-                            color: PdfColors.green50),
-                        children: [
-                          _pdfCell('', center: true),
-                          _pdfCell('', center: true),
-                          _pdfCell('Total Present',
-                              bold: true, color: PdfColors.green800),
-                          ...chunk.map((d) {
-                            final c = _datePresent(_dateKey(d));
-                            return _pdfCell(c == 0 ? '—' : '$c',
-                                center: true,
-                                color: c == 0
-                                    ? PdfColors.grey400
-                                    : PdfColors.green800,
-                                bold: true);
-                          }),
-                          _pdfCell('', center: true),
-                          _pdfCell('', center: true),
-                        ],
-                      ),
-                      pw.TableRow(
-                        decoration:
-                            const pw.BoxDecoration(color: PdfColors.red50),
-                        children: [
-                          _pdfCell('', center: true),
-                          _pdfCell('', center: true),
-                          _pdfCell('Total Absent',
-                              bold: true, color: PdfColors.red800),
-                          ...chunk.map((d) {
-                            final c = _dateAbsent(_dateKey(d));
-                            return _pdfCell(c == 0 ? '—' : '$c',
-                                center: true,
-                                color: c == 0
-                                    ? PdfColors.grey400
-                                    : PdfColors.red800,
-                                bold: true);
-                          }),
-                          _pdfCell('', center: true),
-                          _pdfCell('', center: true),
-                        ],
-                      ),
+                      _pdfHeaderCell('#'),
+                      _pdfHeaderCell('Roll No'),
+                      _pdfHeaderCell('Student Name'),
+                      ...chunk.map((d) => _pdfHeaderCell(
+                          '${_dayNames[d.weekday]}\n${d.day} ${_monthNames[d.month]}',
+                          isWeekend: _isWeekend(d))),
+                      _pdfHeaderCell('P', color: PdfColors.green800),
+                      _pdfHeaderCell('A', color: PdfColors.red800),
                     ],
                   ),
-
-                  pw.Spacer(),
-                  pw.Divider(color: PdfColors.grey400),
-                  pw.Row(
-                    mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  ..._students.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final s   = entry.value;
+                    final rn  = s.rollNo!;
+                    return pw.TableRow(
+                      decoration: pw.BoxDecoration(
+                          color: idx.isOdd ? PdfColors.grey100 : PdfColors.white),
+                      children: [
+                        _pdfCell('${idx + 1}', center: true),
+                        _pdfCell(rn, center: true),
+                        _pdfCell(s.name), // ✅ name
+                        ...chunk.map((d) => _pdfAttendanceCell(_cellState[rn]?[_dateKey(d)])),
+                        _pdfCell('${_studentPresent(rn)}',
+                            center: true, color: PdfColors.green800, bold: true),
+                        _pdfCell('${_studentAbsent(rn)}',
+                            center: true, color: PdfColors.red800, bold: true),
+                      ],
+                    );
+                  }),
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.green50),
                     children: [
-                      pw.Text(
-                          'Exported on: ${DateTime.now().day} ${_monthNames[DateTime.now().month]} ${DateTime.now().year}',
-                          style: const pw.TextStyle(
-                              fontSize: 8, color: PdfColors.grey600)),
-                      pw.Text('Teacher: ${widget.subject.teacherName}',
-                          style: const pw.TextStyle(
-                              fontSize: 8, color: PdfColors.grey600)),
-                      pw.Text('NIT Nagpur — CSE Dept.',
-                          style: const pw.TextStyle(
-                              fontSize: 8, color: PdfColors.grey600)),
+                      _pdfCell('', center: true),
+                      _pdfCell('', center: true),
+                      _pdfCell('Total Present', bold: true, color: PdfColors.green800),
+                      ...chunk.map((d) {
+                        final c = _datePresent(_dateKey(d));
+                        return _pdfCell(c == 0 ? '—' : '$c',
+                            center: true,
+                            color: c == 0 ? PdfColors.grey400 : PdfColors.green800,
+                            bold: true);
+                      }),
+                      _pdfCell('', center: true),
+                      _pdfCell('', center: true),
+                    ],
+                  ),
+                  pw.TableRow(
+                    decoration: const pw.BoxDecoration(color: PdfColors.red50),
+                    children: [
+                      _pdfCell('', center: true),
+                      _pdfCell('', center: true),
+                      _pdfCell('Total Absent', bold: true, color: PdfColors.red800),
+                      ...chunk.map((d) {
+                        final c = _dateAbsent(_dateKey(d));
+                        return _pdfCell(c == 0 ? '—' : '$c',
+                            center: true,
+                            color: c == 0 ? PdfColors.grey400 : PdfColors.red800,
+                            bold: true);
+                      }),
+                      _pdfCell('', center: true),
+                      _pdfCell('', center: true),
                     ],
                   ),
                 ],
-              );
-            },
+              ),
+              pw.Spacer(),
+              pw.Divider(color: PdfColors.grey400),
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(
+                      'Exported on: ${DateTime.now().day} ${_monthNames[DateTime.now().month]} ${DateTime.now().year}',
+                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                  pw.Text('Teacher: ${widget.subject.teacherName}',
+                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                  pw.Text('NIT Nagpur — CSE Dept.',
+                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+                ],
+              ),
+            ],
           ),
-        );
+        ));
       }
 
       final bytes = await pdf.save();
       final dir   = await getTemporaryDirectory();
-      final file  = File(
-          '${dir.path}/Attendance_${widget.subject.code}_${widget.subject.class_}.pdf');
+      final file  = File('${dir.path}/Attendance_${widget.subject.code}_${widget.subject.class_}.pdf');
       await file.writeAsBytes(bytes);
-
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject:
-            'Attendance PDF — ${widget.subject.name} (${widget.subject.class_})',
-      );
+      await Share.shareXFiles([XFile(file.path)],
+          subject: 'Attendance PDF — ${widget.subject.name} (${widget.subject.class_})');
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -649,60 +618,41 @@ class _TeacherAttendanceTableScreenState
     setState(() => _isExporting = false);
   }
 
-  // ── PDF cell helpers ───────────────────────────────────────────────
+  // ── PDF helpers ────────────────────────────────────────────────────
 
   pw.Widget _pdfHeaderCell(String text,
       {bool isWeekend = false, PdfColor color = PdfColors.white}) {
     return pw.Container(
       padding: const pw.EdgeInsets.all(3),
       color: isWeekend ? PdfColors.purple700 : null,
-      child: pw.Text(
-        text,
-        textAlign: pw.TextAlign.center,
-        style: pw.TextStyle(
-            fontSize: 7,
-            fontWeight: pw.FontWeight.bold,
-            color: color),
-      ),
+      child: pw.Text(text,
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+              fontSize: 7, fontWeight: pw.FontWeight.bold, color: color)),
     );
   }
 
   pw.Widget _pdfCell(String text,
-      {bool center = false,
-      bool bold = false,
-      PdfColor color = PdfColors.black}) {
+      {bool center = false, bool bold = false, PdfColor color = PdfColors.black}) {
     return pw.Padding(
       padding: const pw.EdgeInsets.all(3),
-      child: pw.Text(
-        text,
-        textAlign: center ? pw.TextAlign.center : pw.TextAlign.left,
-        style: pw.TextStyle(
-            fontSize: 7,
-            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            color: color),
-      ),
+      child: pw.Text(text,
+          textAlign: center ? pw.TextAlign.center : pw.TextAlign.left,
+          style: pw.TextStyle(
+              fontSize: 7,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: color)),
     );
   }
 
   pw.Widget _pdfAttendanceCell(String? state) {
-    String label;
-    PdfColor fg;
-    PdfColor bg;
-
-    if (state == 'present') {
-      label = 'P';
-      fg = PdfColors.green800;
-      bg = PdfColors.green50;
-    } else if (state == 'absent') {
-      label = 'A';
-      fg = PdfColors.red800;
-      bg = PdfColors.red50;
-    } else {
-      label = '';
-      fg = PdfColors.grey400;
-      bg = PdfColors.white;
-    }
-
+    final label = state == 'present' ? 'P' : state == 'absent' ? 'A' : '';
+    final fg    = state == 'present' ? PdfColors.green800
+                : state == 'absent'  ? PdfColors.red800
+                : PdfColors.grey400;
+    final bg    = state == 'present' ? PdfColors.green50
+                : state == 'absent'  ? PdfColors.red50
+                : PdfColors.white;
     return pw.Container(
       color: bg,
       padding: const pw.EdgeInsets.all(3),
@@ -724,8 +674,7 @@ class _TeacherAttendanceTableScreenState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.subject.name,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             Text('${widget.subject.class_}  •  Sec ${widget.subject.section}',
                 style: const TextStyle(fontSize: 12)),
           ],
@@ -738,8 +687,7 @@ class _TeacherAttendanceTableScreenState
                 ? const Padding(
                     padding: EdgeInsets.all(14),
                     child: SizedBox(
-                        width: 20,
-                        height: 20,
+                        width: 20, height: 20,
                         child: CircularProgressIndicator(
                             color: Colors.white, strokeWidth: 2)))
                 : TextButton.icon(
@@ -759,16 +707,14 @@ class _TeacherAttendanceTableScreenState
           ? const Center(child: CircularProgressIndicator())
           : _students.isEmpty
               ? _buildNoStudents()
-              : Column(
-                  children: [
-                    Expanded(child: _buildTable()),
-                    _buildExportBar(),
-                  ],
-                ),
+              : Column(children: [
+                  Expanded(child: _buildTable()),
+                  _buildExportBar(),
+                ]),
     );
   }
 
-  // ── Export bottom bar ──────────────────────────────────────────────
+  // ── Export bar ─────────────────────────────────────────────────────
 
   Widget _buildExportBar() {
     return Container(
@@ -784,8 +730,7 @@ class _TeacherAttendanceTableScreenState
       ),
       child: Row(
         children: [
-          const Icon(Icons.download_rounded,
-              size: 18, color: Colors.grey),
+          const Icon(Icons.download_rounded, size: 18, color: Colors.grey),
           const SizedBox(width: 8),
           const Text('Export:',
               style: TextStyle(
@@ -825,8 +770,7 @@ class _TeacherAttendanceTableScreenState
           if (_isExporting) ...[
             const SizedBox(width: 12),
             const SizedBox(
-                width: 20,
-                height: 20,
+                width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2)),
           ]
         ],
@@ -856,19 +800,16 @@ class _TeacherAttendanceTableScreenState
   // ── Table ──────────────────────────────────────────────────────────
 
   Widget _buildTable() {
-    const double rollColW    = 50.0;
-    const double nameColW    = 130.0;
-    const double dateColW    = 46.0;
-    const double summaryColW = 42.0;
-    const double rowH        = 52.0; // taller to allow name wrap
-    const double headerH     = 66.0;
+    Color dateBg(DateTime d) =>
+        _isWeekend(d) ? Colors.purple.shade100 : Colors.orange.shade50;
+    Color dateFg(DateTime d) =>
+        _isWeekend(d) ? Colors.purple.shade800 : Colors.orange.shade900;
 
-    Color dateBg(DateTime d) => _isWeekend(d)
-        ? Colors.purple.shade100
-        : Colors.orange.shade50;
-    Color dateFg(DateTime d) => _isWeekend(d)
-        ? Colors.purple.shade800
-        : Colors.orange.shade900;
+    // ✅ highlight today's column
+    bool isToday(DateTime d) {
+      final now = DateTime.now();
+      return d.year == now.year && d.month == now.month && d.day == now.day;
+    }
 
     return Column(
       children: [
@@ -878,24 +819,19 @@ class _TeacherAttendanceTableScreenState
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Row(
             children: [
-              _legendItem(Icons.check_circle_rounded,
-                  Colors.green.shade600, 'Present'),
+              _legendItem(Icons.check_circle_rounded, Colors.green.shade600, 'Present'),
               const SizedBox(width: 14),
-              _legendItem(
-                  Icons.cancel_rounded, Colors.red.shade500, 'Absent'),
+              _legendItem(Icons.cancel_rounded, Colors.red.shade500, 'Absent'),
               const SizedBox(width: 14),
-              _legendItem(Icons.radio_button_unchecked,
-                  Colors.grey.shade400, 'Blank'),
+              _legendItem(Icons.radio_button_unchecked, Colors.grey.shade400, 'Blank'),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                     color: Colors.purple.shade50,
                     borderRadius: BorderRadius.circular(6)),
                 child: Text('🟣 Weekend',
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.purple.shade700)),
+                    style: TextStyle(fontSize: 11, color: Colors.purple.shade700)),
               ),
             ],
           ),
@@ -906,18 +842,15 @@ class _TeacherAttendanceTableScreenState
             width: double.infinity,
             color: Colors.orange.shade100,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            child: Row(
-              children: [
-                Icon(Icons.edit_note_rounded,
-                    size: 18, color: Colors.orange.shade800),
-                const SizedBox(width: 8),
-                Text('Unsaved changes — tap Save to confirm.',
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.orange.shade900,
-                        fontWeight: FontWeight.w600)),
-              ],
-            ),
+            child: Row(children: [
+              Icon(Icons.edit_note_rounded, size: 18, color: Colors.orange.shade800),
+              const SizedBox(width: 8),
+              Text('Unsaved changes — tap Save to confirm.',
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange.shade900,
+                      fontWeight: FontWeight.w600)),
+            ]),
           ),
 
         const SizedBox(height: 2),
@@ -930,72 +863,72 @@ class _TeacherAttendanceTableScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
 
-                // ── FROZEN LEFT: Roll + Name ──
+                // ── FROZEN LEFT: Roll + Name ──────────────────────
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(children: [
-                      _cell('#', rollColW, headerH,
+                      _cell('#', _rollColW, _headerH,
                           bg: Colors.orange.shade700,
-                          fg: Colors.white,
-                          bold: true,
-                          fontSize: 12),
-                      _cell('Student Name', nameColW, headerH,
+                          fg: Colors.white, bold: true, fontSize: 12),
+                      _cell('Student Name', _nameColW, _headerH,
                           bg: Colors.orange.shade700,
-                          fg: Colors.white,
-                          bold: true,
-                          fontSize: 12),
+                          fg: Colors.white, bold: true, fontSize: 12),
                     ]),
-                    // ✅ FIX: use s.name directly, with text wrapping
+                    // ✅ name fix: use _nameCell which allows wrap
                     ..._students.map((s) => Row(children: [
-                          _cell(s.rollNo ?? '-', rollColW, rowH,
+                          _cell(s.rollNo ?? '-', _rollColW, _rowH,
                               bg: Colors.grey.shade50,
                               fg: Colors.blueGrey.shade600,
-                              bold: true,
-                              fontSize: 10),
-                          _nameCell(s.name, nameColW, rowH),
+                              bold: true, fontSize: 10),
+                          _nameCell(s.name, _nameColW, _rowH),
                         ])),
                     Row(children: [
-                      _cell('', rollColW, rowH,
+                      _cell('', _rollColW, _rowH,
                           bg: Colors.green.shade50, fg: Colors.transparent),
-                      _cell('Total Present', nameColW, rowH,
+                      _cell('Total Present', _nameColW, _rowH,
                           bg: Colors.green.shade50,
                           fg: Colors.green.shade800,
-                          bold: true,
-                          fontSize: 11,
-                          align: TextAlign.left),
+                          bold: true, fontSize: 11, align: TextAlign.left),
                     ]),
                     Row(children: [
-                      _cell('', rollColW, rowH,
+                      _cell('', _rollColW, _rowH,
                           bg: Colors.red.shade50, fg: Colors.transparent),
-                      _cell('Total Absent', nameColW, rowH,
+                      _cell('Total Absent', _nameColW, _rowH,
                           bg: Colors.red.shade50,
                           fg: Colors.red.shade800,
-                          bold: true,
-                          fontSize: 11,
-                          align: TextAlign.left),
+                          bold: true, fontSize: 11, align: TextAlign.left),
                     ]),
                   ],
                 ),
 
-                // ── SCROLLABLE DATES ──
+                // ── SCROLLABLE DATES ──────────────────────────────
                 Expanded(
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
+                    controller: _dateScrollController, // ✅ controlled scroll
                     physics: const ClampingScrollPhysics(),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Date headers — highlight today in blue
                         Row(
-                          children: _dates.map((d) => _cell(
-                            '${_dayNames[d.weekday]}\n${d.day} ${_monthNames[d.month]}',
-                            dateColW, headerH,
-                            bg: dateBg(d),
-                            fg: dateFg(d),
-                            bold: true,
-                            fontSize: 9,
-                          )).toList(),
+                          children: _dates.map((d) {
+                            final today = isToday(d);
+                            return _cell(
+                              '${_dayNames[d.weekday]}\n${d.day} ${_monthNames[d.month]}',
+                              _dateColW, _headerH,
+                              bg: today
+                                  ? Colors.blue.shade600
+                                  : dateBg(d),
+                              fg: today
+                                  ? Colors.white
+                                  : dateFg(d),
+                              bold: true, fontSize: 9,
+                            );
+                          }).toList(),
                         ),
+                        // Attendance rows
                         ..._students.map((student) {
                           final rn = student.rollNo!;
                           return Row(
@@ -1005,29 +938,36 @@ class _TeacherAttendanceTableScreenState
                               return _attendanceCell(
                                 state: state,
                                 onTap: () => _toggleCell(rn, key),
-                                width: dateColW,
-                                height: rowH,
+                                width: _dateColW,
+                                height: _rowH,
+                                highlightToday: isToday(d),
                               );
                             }).toList(),
                           );
                         }),
+                        // Present totals row
                         Row(
                           children: _dates.map((d) {
                             final c = _datePresent(_dateKey(d));
                             return _cell(c == 0 ? '—' : '$c',
-                                dateColW, rowH,
+                                _dateColW, _rowH,
                                 bg: Colors.green.shade50,
-                                fg: c == 0 ? Colors.grey.shade300 : Colors.green.shade800,
+                                fg: c == 0
+                                    ? Colors.grey.shade300
+                                    : Colors.green.shade800,
                                 bold: true, fontSize: 11);
                           }).toList(),
                         ),
+                        // Absent totals row
                         Row(
                           children: _dates.map((d) {
                             final c = _dateAbsent(_dateKey(d));
                             return _cell(c == 0 ? '—' : '$c',
-                                dateColW, rowH,
+                                _dateColW, _rowH,
                                 bg: Colors.red.shade50,
-                                fg: c == 0 ? Colors.grey.shade300 : Colors.red.shade800,
+                                fg: c == 0
+                                    ? Colors.grey.shade300
+                                    : Colors.red.shade800,
                                 bold: true, fontSize: 11);
                           }).toList(),
                         ),
@@ -1036,25 +976,25 @@ class _TeacherAttendanceTableScreenState
                   ),
                 ),
 
-                // ── FROZEN RIGHT: P / A ──
+                // ── FROZEN RIGHT: P / A ───────────────────────────
                 Column(
                   children: [
                     Row(children: [
-                      _cell('P', summaryColW, headerH,
-                          bg: Colors.green.shade700, fg: Colors.white,
-                          bold: true, fontSize: 13),
-                      _cell('A', summaryColW, headerH,
-                          bg: Colors.red.shade700, fg: Colors.white,
-                          bold: true, fontSize: 13),
+                      _cell('P', _summaryColW, _headerH,
+                          bg: Colors.green.shade700,
+                          fg: Colors.white, bold: true, fontSize: 13),
+                      _cell('A', _summaryColW, _headerH,
+                          bg: Colors.red.shade700,
+                          fg: Colors.white, bold: true, fontSize: 13),
                     ]),
                     ..._students.map((s) {
                       final p = _studentPresent(s.rollNo!);
                       final a = _studentAbsent(s.rollNo!);
                       return Row(children: [
-                        _cell('$p', summaryColW, rowH,
+                        _cell('$p', _summaryColW, _rowH,
                             bg: Colors.green.shade50,
                             fg: Colors.green.shade800, bold: true),
-                        _cell('$a', summaryColW, rowH,
+                        _cell('$a', _summaryColW, _rowH,
                             bg: Colors.red.shade50,
                             fg: Colors.red.shade800, bold: true),
                       ]);
@@ -1062,19 +1002,19 @@ class _TeacherAttendanceTableScreenState
                     Row(children: [
                       _cell(
                         '${_students.fold(0, (s, st) => s + _studentPresent(st.rollNo!))}',
-                        summaryColW, rowH,
+                        _summaryColW, _rowH,
                         bg: Colors.green.shade200,
                         fg: Colors.green.shade900, bold: true, fontSize: 12),
                       _cell(
                         '${_students.fold(0, (s, st) => s + _studentAbsent(st.rollNo!))}',
-                        summaryColW, rowH,
+                        _summaryColW, _rowH,
                         bg: Colors.red.shade200,
                         fg: Colors.red.shade900, bold: true, fontSize: 12),
                     ]),
                     Row(children: [
-                      _cell('', summaryColW, rowH,
+                      _cell('', _summaryColW, _rowH,
                           bg: Colors.grey.shade100, fg: Colors.transparent),
-                      _cell('', summaryColW, rowH,
+                      _cell('', _summaryColW, _rowH,
                           bg: Colors.grey.shade100, fg: Colors.transparent),
                     ]),
                   ],
@@ -1095,8 +1035,7 @@ class _TeacherAttendanceTableScreenState
       children: [
         Icon(icon, size: 15, color: color),
         const SizedBox(width: 4),
-        Text(label,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+        Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
       ],
     );
   }
@@ -1113,8 +1052,7 @@ class _TeacherAttendanceTableScreenState
       decoration: BoxDecoration(
           color: bg,
           border: Border.all(color: Colors.grey.shade200, width: 0.5)),
-      alignment:
-          align == TextAlign.left ? Alignment.centerLeft : Alignment.center,
+      alignment: align == TextAlign.left ? Alignment.centerLeft : Alignment.center,
       padding: EdgeInsets.symmetric(
           horizontal: align == TextAlign.left ? 8 : 3, vertical: 4),
       child: Text(text,
@@ -1126,7 +1064,7 @@ class _TeacherAttendanceTableScreenState
     );
   }
 
-  // ✅ FIX: name cell uses softWrap + overflow visible so long names wrap
+  // ✅ Name cell with word wrap for long names
   Widget _nameCell(String name, double w, double h) {
     return Container(
       width: w,
@@ -1137,35 +1075,46 @@ class _TeacherAttendanceTableScreenState
           border: Border.all(color: Colors.grey.shade200, width: 0.5)),
       alignment: Alignment.centerLeft,
       child: Text(
-        name,
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-        softWrap: true,       // ✅ allow wrapping
-        overflow: TextOverflow.visible, // ✅ don't clip
-        maxLines: 2,          // max 2 lines
+        name.isNotEmpty ? name : '—',
+        style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87),
+        softWrap: true,
+        overflow: TextOverflow.visible,
+        maxLines: 2,
       ),
     );
   }
 
-  Widget _attendanceCell(
-      {required String? state,
-      required VoidCallback onTap,
-      required double width,
-      required double height}) {
+  Widget _attendanceCell({
+    required String? state,
+    required VoidCallback onTap,
+    required double width,
+    required double height,
+    bool highlightToday = false,
+  }) {
     Widget icon;
     Color bg;
+
     if (state == 'present') {
       icon = Icon(Icons.check_circle_rounded,
           color: Colors.green.shade600, size: 22);
       bg = Colors.green.shade50;
     } else if (state == 'absent') {
-      icon =
-          Icon(Icons.cancel_rounded, color: Colors.red.shade500, size: 22);
+      icon = Icon(Icons.cancel_rounded, color: Colors.red.shade500, size: 22);
       bg = Colors.red.shade50;
     } else {
       icon = Icon(Icons.radio_button_unchecked,
           color: Colors.grey.shade300, size: 18);
       bg = Colors.white;
     }
+
+    // ✅ today column gets a subtle blue tint on blank cells
+    if (highlightToday && state == null) {
+      bg = Colors.blue.shade50;
+    }
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1173,7 +1122,12 @@ class _TeacherAttendanceTableScreenState
         height: height,
         decoration: BoxDecoration(
             color: bg,
-            border: Border.all(color: Colors.grey.shade200, width: 0.5)),
+            border: Border.all(
+              color: highlightToday
+                  ? Colors.blue.shade200
+                  : Colors.grey.shade200,
+              width: highlightToday ? 1.0 : 0.5,
+            )),
         alignment: Alignment.center,
         child: icon,
       ),
