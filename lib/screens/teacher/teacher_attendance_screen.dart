@@ -43,7 +43,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       _currentTeacherId = user?.uid;
       _students = students;
       _isLoading = false;
-      // Initialize manual attendance map
       for (var student in students) {
         _manualAttendance[student.rollNo!] = false;
       }
@@ -71,13 +70,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       setState(() => _isScanning = false);
     }
 
-    // Auto stop after 60 seconds
     Future.delayed(const Duration(seconds: 60), () async {
       if (_isScanning) {
         await BleService.stopScanning();
-        if (mounted) {
-          setState(() => _isScanning = false);
-        }
+        if (mounted) setState(() => _isScanning = false);
       }
     });
   }
@@ -91,7 +87,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
     if (_currentTeacherId == null) return;
 
     int savedCount = 0;
-    
+
     // Save BLE detected attendance
     for (var student in _students) {
       if (_presentStudents.contains(student.rollNo)) {
@@ -102,11 +98,11 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           subjectCode: widget.subject.code,
           subjectName: widget.subject.name,
           teacherId: _currentTeacherId!,
+          class_: widget.subject.class_, // ← FIXED
           dateTime: DateTime.now(),
           status: 'present',
           markedBy: 'bluetooth',
         );
-        
         bool success = await _databaseService.markAttendance(attendance);
         if (success) savedCount++;
       }
@@ -123,11 +119,11 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           subjectCode: widget.subject.code,
           subjectName: widget.subject.name,
           teacherId: _currentTeacherId!,
+          class_: widget.subject.class_, // ← FIXED
           dateTime: DateTime.now(),
           status: 'present',
           markedBy: 'manual',
         );
-        
         bool success = await _databaseService.markAttendance(attendance);
         if (success) savedCount++;
       }
@@ -140,8 +136,6 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
           backgroundColor: Colors.green,
         ),
       );
-      
-      // Reset
       setState(() {
         _presentStudents.clear();
         _manualAttendance.updateAll((key, value) => false);
@@ -157,7 +151,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
       );
     }
 
-    int totalPresent = _presentStudents.length + 
+    int totalPresent = _presentStudents.length +
         _manualAttendance.values.where((v) => v).length;
 
     return Scaffold(
@@ -185,9 +179,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     Text(
                       '${widget.subject.class_} - ${widget.subject.section}',
                       style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                          fontSize: 16, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -221,15 +213,18 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     onPressed: _isScanning ? _stopScanning : _startBLEScanning,
-                    icon: Icon(_isScanning ? Icons.stop : Icons.bluetooth_searching),
-                    label: Text(_isScanning ? 'Stop Scanning' : 'Take Attendance'),
+                    icon: Icon(_isScanning
+                        ? Icons.stop
+                        : Icons.bluetooth_searching),
+                    label: Text(
+                        _isScanning ? 'Stop Scanning' : 'Take Attendance'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isScanning ? Colors.red : Colors.orange.shade700,
+                      backgroundColor:
+                          _isScanning ? Colors.red : Colors.orange.shade700,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
@@ -240,10 +235,10 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green.shade700,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 14, horizontal: 20),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                     child: const Icon(Icons.save),
                   ),
@@ -264,10 +259,8 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    'Scanning for students...',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
+                  Text('Scanning for students...',
+                      style: TextStyle(color: Colors.grey.shade600)),
                 ],
               ),
             ),
@@ -293,15 +286,14 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                       backgroundColor: isPresent
                           ? Colors.green.shade100
                           : Colors.grey.shade100,
-                      child: Icon(
-                        Icons.person,
-                        color: isPresent ? Colors.green.shade700 : Colors.grey,
-                      ),
+                      child: Icon(Icons.person,
+                          color: isPresent
+                              ? Colors.green.shade700
+                              : Colors.grey),
                     ),
-                    title: Text(
-                      student.name,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    title: Text(student.name,
+                        style:
+                            const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -310,9 +302,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
                           Text(
                             'Marked via Bluetooth',
                             style: TextStyle(
-                              color: Colors.green.shade700,
-                              fontSize: 12,
-                            ),
+                                color: Colors.green.shade700, fontSize: 12),
                           ),
                       ],
                     ),
@@ -339,9 +329,7 @@ class _TeacherAttendanceScreenState extends State<TeacherAttendanceScreen> {
 
   @override
   void dispose() {
-    if (_isScanning) {
-      BleService.stopScanning();
-    }
+    if (_isScanning) BleService.stopScanning();
     super.dispose();
   }
 }

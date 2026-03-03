@@ -8,16 +8,13 @@ class DatabaseService {
 
   // ── Students ────────────────────────────────────────────────────────
 
-  // Get students by class (class already contains section e.g. "CSE-6B")
-  // Only filter by 'class' — avoids needing a composite index
   Future<List<UserModel>> getStudentsByClass(String class_, String section) async {
     try {
       print('🔍 Fetching students for class: $class_');
-
       QuerySnapshot snapshot = await _firestore
           .collection('users')
           .where('role', isEqualTo: 'student')
-          .where('class', isEqualTo: class_) // e.g. "CSE-6B" — section is already encoded
+          .where('class', isEqualTo: class_)
           .get();
 
       final students = snapshot.docs
@@ -32,9 +29,8 @@ class DatabaseService {
     }
   }
 
-  // ── Subjects ─────────────────────────────────────────────────────────
+  // ── Subjects ──────────────────────────────────────────────────────────
 
-  // Get subjects allocated to a teacher
   Future<List<SubjectModel>> getTeacherSubjects(String teacherId) async {
     try {
       QuerySnapshot snapshot = await _firestore
@@ -51,10 +47,8 @@ class DatabaseService {
     }
   }
 
-  // Allocate subject — doc ID includes class so same code for 6A and 6B don't overwrite each other
   Future<bool> allocateSubject(SubjectModel subject) async {
     try {
-      // e.g. "CSE601-CSE-6B" — unique per subject per class
       final docId = '${subject.code}-${subject.class_}';
       await _firestore.collection('subjects').doc(docId).set(subject.toMap());
       print('✅ Subject allocated: $docId');
@@ -65,7 +59,6 @@ class DatabaseService {
     }
   }
 
-  // Get all subjects (HOD view)
   Future<List<SubjectModel>> getAllSubjects() async {
     try {
       QuerySnapshot snapshot = await _firestore.collection('subjects').get();
@@ -80,7 +73,6 @@ class DatabaseService {
 
   // ── Attendance ────────────────────────────────────────────────────────
 
-  // Mark attendance for a student
   Future<bool> markAttendance(AttendanceModel attendance) async {
     try {
       await _firestore.collection('attendance').add(attendance.toMap());
@@ -91,7 +83,6 @@ class DatabaseService {
     }
   }
 
-  // Get attendance history for a student
   Future<List<AttendanceModel>> getStudentAttendance(String rollNo) async {
     try {
       QuerySnapshot snapshot = await _firestore
@@ -102,8 +93,8 @@ class DatabaseService {
           .get();
 
       return snapshot.docs
-          .map((doc) => AttendanceModel.fromMap(
-              doc.data() as Map<String, dynamic>, doc.id))
+          .map((doc) =>
+              AttendanceModel.fromMap(doc.data() as Map<String, dynamic>, doc.id))
           .toList();
     } catch (e) {
       print('❌ Error fetching attendance: $e');
@@ -111,9 +102,83 @@ class DatabaseService {
     }
   }
 
-  // ── Teachers / HOD ────────────────────────────────────────────────────
+  // Get all attendance records for a subject + class (for the table view)
+  // Returns Map<studentRollNo, Map<dateKey, AttendanceModel>>
+  // dateKey format: "yyyy-MM-dd"
+  Future<Map<String, Map<String, AttendanceModel>>> getAttendanceForSubjectClass(
+    String subjectCode,
+    String class_,
+  ) async {
+    try {
+      print('🔍 Fetching attendance for $subjectCode / $class_');
 
-  // Get all teachers
+      QuerySnapshot snapshot = await _firestore
+          .collection('attendance')
+          .where('subjectCode', isEqualTo: subjectCode)
+          .where('class', isEqualTo: class_)
+          .get();
+
+      // Build nested map: rollNo → { "2025-02-23" → AttendanceModel }
+      final Map<String, Map<String, AttendanceModel>> result = {};
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final model = AttendanceModel.fromMap(data, doc.id);
+        final rollNo = model.studentRollNo;
+        final dateKey = _dateKey(model.dateTime);
+
+        result.putIfAbsent(rollNo, () => {});
+        result[rollNo]![dateKey] = model;
+      }
+
+      print('✅ Attendance records loaded: ${snapshot.docs.length}');
+      return result;
+    } catch (e) {
+      print('❌ Error fetching attendance table: $e');
+      return {};
+    }
+  }
+
+  // Batch save attendance — used by the table Save button
+  // Deletes existing records for given rollNo+subjectCode+date and writes fresh ones
+  Future<bool> saveAttendanceBatch(List<AttendanceModel> records) async {
+    try {
+      final WriteBatch batch = _firestore.batch();
+
+      for (final record in records) {
+        if (record.id.isNotEmpty) {
+          // Update existing doc
+          final ref = _firestore.collection('attendance').doc(record.id);
+          batch.set(ref, record.toMap());
+        } else {
+          // New doc
+          final ref = _firestore.collection('attendance').doc();
+          batch.set(ref, record.toMap());
+        }
+      }
+
+      await batch.commit();
+      print('✅ Batch saved ${records.length} attendance records');
+      return true;
+    } catch (e) {
+      print('❌ Error batch saving attendance: $e');
+      return false;
+    }
+  }
+
+  // Delete a specific attendance record by ID
+  Future<bool> deleteAttendance(String docId) async {
+    try {
+      await _firestore.collection('attendance').doc(docId).delete();
+      return true;
+    } catch (e) {
+      print('❌ Error deleting attendance: $e');
+      return false;
+    }
+  }
+
+  // ── Teachers / HOD ─────────────────────────────────────────────────────
+
   Future<List<UserModel>> getAllTeachers() async {
     try {
       QuerySnapshot snapshot = await _firestore
@@ -129,4 +194,9 @@ class DatabaseService {
       return [];
     }
   }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+
+  String _dateKey(DateTime dt) =>
+      '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
 }
